@@ -10,7 +10,7 @@
 // traffic. If no device is found, use the StreamingManual example instead
 // and provide the device's connection string directly, e.g.:
 //
-//     dotnet run -- daq.lt://<device-ip>:7414   (in the StreamingManual project)
+//     dotnet run -- daq.lt://<device-ip>/stream   (in the StreamingManual project)
 //
 // Usage:
 //     dotnet run
@@ -48,7 +48,7 @@ if (connectionString == null)
     Console.Error.WriteLine("No openDAQ(TM) LT device found via discovery.");
     Console.Error.WriteLine("If discovery is blocked in your network, use StreamingManual instead");
     Console.Error.WriteLine("and pass the device's connection string directly, e.g.:");
-    Console.Error.WriteLine("    dotnet run -- daq.lt://<device-ip>:7414");
+    Console.Error.WriteLine("    dotnet run -- daq.lt://<device-ip>/stream");
     return 1;
 }
 
@@ -81,21 +81,22 @@ foreach (var signal in allSignals)
 var torqueSignal = allSignals.FirstOrDefault(s => s.Name == "torque-1");
 var speedSignal = allSignals.FirstOrDefault(s => s.Name == "speed-1");
 
-if (torqueSignal is null || speedSignal is null)
+if (torqueSignal is null && speedSignal is null)
 {
     Console.Error.WriteLine("Could not find signals 'torque-1' and/or 'speed-1' on the device.");
     return 1;
 }
 
-Console.WriteLine($"Found signals: {torqueSignal.Name}, {speedSignal.Name}");
+Console.WriteLine($"Found signals: {string.Join(", ", new[] { torqueSignal?.Name, speedSignal?.Name }.Where(name => name is not null))}");
 
-// Create stream readers for both signals
-var torqueReader = OpenDAQFactory.CreateStreamReader<double, ulong>(torqueSignal);
-var speedReader = OpenDAQFactory.CreateStreamReader<double, ulong>(speedSignal);
-
+// Create stream readers only for the signals that are present
 // Wrap with a time reader to get human-readable timestamps for the domain values
-var torqueTimeReader = OpenDAQFactory.CreateTimeReader(torqueReader, torqueSignal);
-var speedTimeReader = OpenDAQFactory.CreateTimeReader(speedReader, speedSignal);
+var torqueTimeReader = torqueSignal is not null
+    ? OpenDAQFactory.CreateTimeReader(OpenDAQFactory.CreateStreamReader<double, ulong>(torqueSignal), torqueSignal)
+    : null;
+var speedTimeReader = speedSignal is not null
+    ? OpenDAQFactory.CreateTimeReader(OpenDAQFactory.CreateStreamReader<double, ulong>(speedSignal), speedSignal)
+    : null;
 
 var torqueSamples = new double[100];
 var speedSamples = new double[100];
@@ -108,13 +109,19 @@ while (true)
 {
     Thread.Sleep(100);
 
-    nuint torqueCount = 100;
-    torqueTimeReader.ReadWithDomain(torqueSamples, torqueTimeStamps, ref torqueCount);
-    if (torqueCount > 0)
-        Console.WriteLine($"torque-1: {torqueSamples[torqueCount - 1]:F4} Nm  @ {torqueTimeStamps[torqueCount - 1]:o}");
+    if (torqueTimeReader is not null)
+    {
+        nuint torqueCount = 100;
+        torqueTimeReader.ReadWithDomain(torqueSamples, torqueTimeStamps, ref torqueCount);
+        if (torqueCount > 0)
+            Console.WriteLine($"torque-1: {torqueSamples[torqueCount - 1]:F4} Nm  @ {torqueTimeStamps[torqueCount - 1]:o}");
+    }
 
-    nuint speedCount = 100;
-    speedTimeReader.ReadWithDomain(speedSamples, speedTimeStamps, ref speedCount);
-    if (speedCount > 0)
-        Console.WriteLine($"speed-1:  {speedSamples[speedCount - 1]:F4} rpm @ {speedTimeStamps[speedCount - 1]:o}");
+    if (speedTimeReader is not null)
+    {
+        nuint speedCount = 100;
+        speedTimeReader.ReadWithDomain(speedSamples, speedTimeStamps, ref speedCount);
+        if (speedCount > 0)
+            Console.WriteLine($"speed-1:  {speedSamples[speedCount - 1]:F4} rpm @ {speedTimeStamps[speedCount - 1]:o}");
+    }
 }

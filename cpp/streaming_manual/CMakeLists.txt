@@ -5,3 +5,4 @@ find_package(openDAQ REQUIRED)
 
 add_executable(streaming_manual main.cpp)
 target_link_libraries(streaming_manual PRIVATE daq::opendaq)
+target_compile_definitions(streaming_manual PRIVATE OPENDAQ_MODULES_DIR="${OPENDAQ_MODULES_DIR}")

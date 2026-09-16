@@ -9,7 +9,7 @@ The T100 only supports the openDAQ(TM) LT streaming protocol
 (server capability ID "OpenDAQLTStreaming"), so the connection string must
 use the "daq.lt://" prefix, e.g.:
 
-    python streaming_manual.py daq.lt://192.168.0.10:7414
+    python streaming_manual.py daq.lt://192.168.0.10/stream
 
 Usage:
     python streaming_manual.py <connection-string>
@@ -27,7 +27,7 @@ import opendaq as daq
 def main():
     if len(sys.argv) != 2:
         print(f"Usage: python {sys.argv[0]} <connection-string>", file=sys.stderr)
-        print(f"Example: python {sys.argv[0]} daq.lt://192.168.0.10:7414", file=sys.stderr)
+        print(f"Example: python {sys.argv[0]} daq.lt://192.168.0.10/stream", file=sys.stderr)
         sys.exit(1)
 
     connection_string = sys.argv[1]
@@ -55,24 +55,28 @@ def main():
     # Find the "torque-1" and "speed-1" signals anywhere in the device's component tree
     torque_signals = device.get_signals_recursive(daq.LocalIdSearchFilter(torqueChannelName))
     speed_signals = device.get_signals_recursive(daq.LocalIdSearchFilter(speedChannelName))
-    
 
-    if not torque_signals or not speed_signals:
-        print("Could not find signals 'torque-1' and/or 'speed-1' on the device.", file=sys.stderr)
+    has_torque = len(torque_signals) > 0
+    has_speed = len(speed_signals) > 0
+
+    if not has_torque and not has_speed:
+        print(f"Could not find signals '{torqueChannelName}' and/or '{speedChannelName}' on the device.", file=sys.stderr)
         sys.exit(1)
 
-    torque_signal = torque_signals[0]
-    speed_signal = speed_signals[0]
+    found = []
+    if has_torque:
+        torque_signal = torque_signals[0]
+        found.append(torque_signal.name)
+    if has_speed:
+        speed_signal = speed_signals[0]
+        found.append(speed_signal.name)
 
-    print(f"Found signals: {torque_signal.name}, {speed_signal.name}")
+    print(f"Found signals: {', '.join(found)}")
 
-    # Create stream readers for both signals
-    torque_reader = daq.StreamReader(torque_signal)
-    speed_reader = daq.StreamReader(speed_signal)
-
+    # Create stream readers only for the signals that are present
     # Wrap with a time reader to get human-readable timestamps for the domain values
-    torque_time_reader = daq.TimeStreamReader(torque_reader)
-    speed_time_reader = daq.TimeStreamReader(speed_reader)
+    torque_time_reader = daq.TimeStreamReader(daq.StreamReader(torque_signal)) if has_torque else None
+    speed_time_reader = daq.TimeStreamReader(daq.StreamReader(speed_signal)) if has_speed else None
 
     print("Reading torque-1 / speed-1 ... (Ctrl+C to stop)")
 
@@ -80,16 +84,15 @@ def main():
         while True:
             time.sleep(0.1)
 
-            torque_values, torque_timestamps = torque_time_reader.read_with_timestamps(100)
-            speed_values, speed_timestamps = speed_time_reader.read_with_timestamps(100)
+            if has_torque:
+                torque_values, torque_timestamps = torque_time_reader.read_with_timestamps(100)
+                for value, timestamp in zip(torque_values, torque_timestamps):
+                    print(f"{torqueChannelName}: {float(value):.4f} Nm @ {timestamp}")
 
-            for (torque_value, torque_timestamp), (speed_value, speed_timestamp) in zip(
-                zip(torque_values, torque_timestamps), zip(speed_values, speed_timestamps)
-            ):
-                print(
-                    f"torque-1: {float(torque_value):.4f} Nm @ {torque_timestamp}  |  "
-                    f"speed-1: {float(speed_value):.4f} rpm @ {speed_timestamp}"
-                )
+            if has_speed:
+                speed_values, speed_timestamps = speed_time_reader.read_with_timestamps(100)
+                for value, timestamp in zip(speed_values, speed_timestamps):
+                    print(f"{speedChannelName}: {float(value):.4f} rpm @ {timestamp}")
     except KeyboardInterrupt:
         print("\nStopped by user.")
 

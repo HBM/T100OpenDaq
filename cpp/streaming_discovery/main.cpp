@@ -11,7 +11,7 @@
  * traffic. If no device is found, use the "streaming_manual" example instead
  * and provide the device's connection string directly, e.g.:
  *
- *     ./streaming_manual daq.lt://<device-ip>:7414
+ *     ./streaming_manual daq.lt://<device-ip>/stream
  *
  * Usage:
  *     streaming_discovery
@@ -19,15 +19,33 @@
 
 #include <opendaq/opendaq.h>
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 #include <chrono>
 #include <thread>
+#include <optional>
 
 using namespace daq;
 using namespace std::chrono_literals;
 
+// std::chrono::system_clock::time_point has no operator<< in C++17
+static std::string formatTimestamp(const std::chrono::system_clock::time_point& timePoint)
+{
+    auto time = std::chrono::system_clock::to_time_t(timePoint);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(timePoint.time_since_epoch()) % 1000;
+
+    std::ostringstream oss;
+    oss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S")
+        << '.' << std::setfill('0') << std::setw(3) << ms.count();
+    return oss.str();
+}
+
 int main()
 {
-    InstancePtr instance = Instance();
+    // Create a fresh openDAQ(TM) instance
+    // OPENDAQ_MODULES_DIR is defined by CMake to point at the SDK's modules folder,
+    // since executables don't have modules alongside them like the Python package does
+    InstancePtr instance = Instance(OPENDAQ_MODULES_DIR);
 
     std::cout << "Scanning the network for openDAQ(TM) LT devices (mDNS discovery)..." << std::endl;
 
@@ -56,7 +74,7 @@ int main()
         std::cerr << "No openDAQ(TM) LT device found via discovery.\n"
                   << "If discovery is blocked in your network, use 'streaming_manual' instead\n"
                   << "and pass the device's connection string directly, e.g.:\n"
-                  << "    ./streaming_manual daq.lt://<device-ip>:7414" << std::endl;
+                  << "    ./streaming_manual daq.lt://<device-ip>/stream" << std::endl;
         return 1;
     }
 
@@ -79,24 +97,34 @@ int main()
     auto torqueSignals = device.getSignalsRecursive(search::LocalId("torque-1"));
     auto speedSignals   = device.getSignalsRecursive(search::LocalId("speed-1"));
 
-    if (torqueSignals.getCount() == 0 || speedSignals.getCount() == 0)
+    bool hasTorque = torqueSignals.getCount() > 0;
+    bool hasSpeed = speedSignals.getCount() > 0;
+
+    if (!hasTorque && !hasSpeed)
     {
         std::cerr << "Could not find signals 'torque-1' and/or 'speed-1' on the device." << std::endl;
         return 1;
     }
 
-    SignalPtr torqueSignal = torqueSignals[0];
-    SignalPtr speedSignal = speedSignals[0];
+    SignalPtr torqueSignal = hasTorque ? torqueSignals[0] : nullptr;
+    SignalPtr speedSignal = hasSpeed ? speedSignals[0] : nullptr;
 
-    std::cout << "Found signals: " << torqueSignal.getName() << ", " << speedSignal.getName() << std::endl;
+    std::cout << "Found signals:";
+    if (hasTorque)
+        std::cout << " " << torqueSignal.getName();
+    if (hasSpeed)
+        std::cout << " " << speedSignal.getName();
+    std::cout << std::endl;
 
-    // Create stream readers for both signals (value type double, domain type int64 / time)
-    StreamReaderPtr torqueReader = StreamReader<double, uint64_t>(torqueSignal);
-    StreamReaderPtr speedReader  = StreamReader<double, uint64_t>(speedSignal);
-
+    // Create stream readers for the signals that are present (value type double, domain type int64 / time)
     // Wrap with a time reader to get human-readable timestamps for the domain values
-    auto torqueTimeReader = TimeReader(torqueReader);
-    auto speedTimeReader  = TimeReader(speedReader);
+    std::optional<TimeReader<StreamReaderPtr>> torqueTimeReader;
+    std::optional<TimeReader<StreamReaderPtr>> speedTimeReader;
+
+    if (hasTorque)
+        torqueTimeReader.emplace(StreamReader<double, uint64_t>(torqueSignal));
+    if (hasSpeed)
+        speedTimeReader.emplace(StreamReader<double, uint64_t>(speedSignal));
 
     double torqueSamples[100];
     double speedSamples[100];
@@ -109,17 +137,23 @@ int main()
     {
         std::this_thread::sleep_for(100ms);
 
-        SizeT torqueCount = 100;
-        torqueTimeReader.readWithDomain(torqueSamples, torqueTimeStamps, &torqueCount);
-        if (torqueCount > 0)
-            std::cout << "torque-1: " << torqueSamples[torqueCount - 1]
-                       << " Nm  @ " << torqueTimeStamps[torqueCount - 1] << std::endl;
+        if (hasTorque)
+        {
+            SizeT torqueCount = 100;
+            torqueTimeReader->readWithDomain(torqueSamples, torqueTimeStamps, &torqueCount);
+            if (torqueCount > 0)
+                std::cout << "torque-1: " << torqueSamples[torqueCount - 1]
+                           << " Nm  @ " << formatTimestamp(torqueTimeStamps[torqueCount - 1]) << std::endl;
+        }
 
-        SizeT speedCount = 100;
-        speedTimeReader.readWithDomain(speedSamples, speedTimeStamps, &speedCount);
-        if (speedCount > 0)
-            std::cout << "speed-1:  " << speedSamples[speedCount - 1]
-                       << " rpm @ " << speedTimeStamps[speedCount - 1] << std::endl;
+        if (hasSpeed)
+        {
+            SizeT speedCount = 100;
+            speedTimeReader->readWithDomain(speedSamples, speedTimeStamps, &speedCount);
+            if (speedCount > 0)
+                std::cout << "speed-1:  " << speedSamples[speedCount - 1]
+                           << " rpm @ " << formatTimestamp(speedTimeStamps[speedCount - 1]) << std::endl;
+        }
     }
 
     return 0;
