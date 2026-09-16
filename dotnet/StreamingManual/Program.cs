@@ -1,32 +1,40 @@
-// T100 openDAQ(TM) example -- .NET / C#
+// T100 openDAQ(TM) example -- .NET / C# -- Manual connection string streaming
 //
-// Connects directly to a T100 device via its IP address (bypassing mDNS/discovery,
-// e.g. when the network scan is blocked by a proxy such as Zscaler) and streams
-// the two measurement signals "torque-1" and "speed-1".
+// Connects to a T100 device using an explicitly given openDAQ(TM) connection
+// string (no mDNS/network discovery involved) and streams the two measurement
+// signals "torque-1" and "speed-1".
 //
-// Adjust DeviceIp / DeviceConnectionString to match your T100 device.
+// The T100 only supports the openDAQ(TM) LT streaming protocol
+// (server capability ID "OpenDAQLTStreaming"), so the connection string must
+// use the "daq.lt://" prefix, e.g.:
+//
+//     dotnet run -- daq.lt://192.168.0.10:7414
+//
+// Usage:
+//     dotnet run -- <connection-string>
 
 using Daq.Core.Types;
 using Daq.Core.OpenDAQ;
+using System.Linq;
 
-// IP address of the T100 device (from the customer's network)
-const string DeviceIp = "172.19.211.82";
+if (args.Length != 1)
+{
+    Console.Error.WriteLine("Usage: dotnet run -- <connection-string>");
+    Console.Error.WriteLine("Example: dotnet run -- daq.lt://192.168.0.10:7414");
+    return 1;
+}
 
-// The T100 only supports the openDAQ(TM) LT streaming protocol (server capability ID
-// "OpenDAQLTStreaming"), not the full OPC UA configuration protocol. LT devices expose
-// a flat list of Signals directly (no full component tree). The "daq.lt://" prefix
-// selects this protocol explicitly; the default LT port is 7414 and can be omitted.
-string deviceConnectionString = $"daq.lt://{DeviceIp}:7414";
+string connectionString = args[0];
 
 // Create a fresh openDAQ(TM) instance
 Instance instance = OpenDAQFactory.Instance();
 
-Console.WriteLine($"Connecting to T100 at {deviceConnectionString} ...");
+Console.WriteLine($"Connecting to {connectionString} ...");
 
 Device? device;
 try
 {
-    device = instance.AddDevice(deviceConnectionString);
+    device = instance.AddDevice(connectionString);
 }
 catch (Exception e)
 {
@@ -37,17 +45,24 @@ catch (Exception e)
 Console.WriteLine($"Connected to: {device.Info.Name}");
 
 // Find the "torque-1" and "speed-1" signals anywhere in the device's component tree
-var torqueSignals = device.GetSignalsRecursive(SearchFactory.LocalId("torque-1"));
-var speedSignals = device.GetSignalsRecursive(SearchFactory.LocalId("speed-1"));
+// (matched by name instead of a LocalId search filter, which doesn't reliably
+// match streamed signals in the .NET binding)
+var allSignals = device.GetSignalsRecursive();
 
-if (torqueSignals.Count == 0 || speedSignals.Count == 0)
+Console.WriteLine($"Available signals ({allSignals.Count}):");
+foreach (var signal in allSignals)
+{
+    Console.WriteLine($"  - name={signal.Name}, local_id={signal.LocalId}");
+}
+
+var torqueSignal = allSignals.FirstOrDefault(s => s.Name == "torque-1");
+var speedSignal = allSignals.FirstOrDefault(s => s.Name == "speed-1");
+
+if (torqueSignal is null || speedSignal is null)
 {
     Console.Error.WriteLine("Could not find signals 'torque-1' and/or 'speed-1' on the device.");
     return 1;
 }
-
-var torqueSignal = torqueSignals[0];
-var speedSignal = speedSignals[0];
 
 Console.WriteLine($"Found signals: {torqueSignal.Name}, {speedSignal.Name}");
 
@@ -66,7 +81,7 @@ var speedTimeStamps = new DateTime[100];
 
 Console.WriteLine("Reading torque-1 / speed-1 ... (Ctrl+C to stop)");
 
-for (int i = 0; i < 200; ++i)
+while (true)
 {
     Thread.Sleep(100);
 
@@ -80,5 +95,3 @@ for (int i = 0; i < 200; ++i)
     if (speedCount > 0)
         Console.WriteLine($"speed-1:  {speedSamples[speedCount - 1]:F4} rpm @ {speedTimeStamps[speedCount - 1]:o}");
 }
-
-return 0;

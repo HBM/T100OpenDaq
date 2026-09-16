@@ -8,24 +8,26 @@ Standard-SDKs in **C++**, **Python** oder **.NET (C#)** auf die Messsignale
 zugreifen – unabhängig davon, welche Programmiersprache in Ihrer bestehenden
 Mess- und Auswerteumgebung eingesetzt wird.
 
-Dieses Paket enthält für jede der drei Sprachen zwei lauffähige Beispiele:
+Dieses Paket enthält für jede der drei Sprachen zwei lauffähige Beispiel-Apps,
+die beide die Messsignale `torque-1` (Drehmoment) und `speed-1` (Drehzahl)
+fortlaufend auslesen:
 
-| Beispiel | Zweck |
-|---|---|
-| **torque_speed_reader** | Verbindet sich direkt mit dem T100 (per IP-Adresse) und liest fortlaufend die zwei Messsignale `torque-1` (Drehmoment) und `speed-1` (Drehzahl) aus. |
-| **discovery** | Durchsucht das lokale Netzwerk automatisch (mDNS) nach openDAQ™-Geräten und zeigt Name, Verbindungsstring und unterstützte Protokolle an. |
+| App | Argumente | Zweck |
+|---|---|---|
+| **streaming_manual** | 1 Argument: Verbindungsstring | Verbindet sich direkt mit einem T100-Gerät über einen manuell angegebenen openDAQ™-Verbindungsstring – ohne Netzwerksuche. |
+| **streaming_discovery** | keine | Sucht automatisch (mDNS) nach einem T100-Gerät im lokalen Netzwerk, verbindet sich mit dem ersten gefundenen Gerät und startet das Streaming. |
 
 ```
 T100OpenDaq/
 ├── cpp/            C++ Beispiele (CMake-Projekt)
-│   ├── torque_speed_reader/
-│   └── discovery/
+│   ├── streaming_manual/
+│   └── streaming_discovery/
 ├── python/         Python Beispiele
-│   ├── torque_speed_reader.py
-│   └── discovery.py
+│   ├── streaming_manual.py
+│   └── streaming_discovery.py
 └── dotnet/         .NET / C# Beispiele
-    ├── TorqueSpeedReader/
-    └── Discovery/
+    ├── StreamingManual/
+    └── StreamingDiscovery/
 ```
 
 ## Wichtiger Hinweis: T100 unterstützt nur openDAQ LT
@@ -44,40 +46,60 @@ OPC UA Konfigurationsprotokoll. Das bedeutet konkret:
   unterhalb des Geräts. Für unseren Anwendungsfall – Auslesen der Signale
   `torque-1` und `speed-1` – ist das ausreichend.
 
-## Wichtiger Hinweis zu Ihrem Netzwerk (Zscaler)
+## `streaming_manual` – Streaming über einen manuellen Verbindungsstring
 
-Das automatische **Discovery**-Beispiel nutzt **mDNS** (Multicast-DNS), um
-Geräte im lokalen Netz zu finden. Viele Unternehmensnetzwerke – insbesondere
-mit **Zscaler** oder anderen SASE-/Proxy-Lösungen – blockieren diesen
-Multicast-Verkehr. In diesem Fall liefert das Discovery-Beispiel **keine
-Treffer**, obwohl das Gerät selbst erreichbar ist.
+Diese App verbindet sich **ohne Netzwerksuche** direkt mit dem Gerät. Sie
+wird mit genau **einem Argument** aufgerufen: dem openDAQ™-Verbindungsstring
+des T100.
 
-**Lösung:** Verbinden Sie sich stattdessen direkt über die bekannte
-IP-Adresse des Geräts – genau das macht das Beispiel
-`torque_speed_reader`. In Ihrem Fall wurde das T100 unter folgender Adresse
-erreicht:
+Format: `daq.lt://<IP-Adresse>:<Port>`
 
-```
-172.19.211.82
-```
+```bash
+# Python
+python streaming_manual.py daq.lt://<IP-Adresse-des-T100>:7414
 
-Der Verbindungsstring dazu lautet:
+# C++
+./streaming_manual daq.lt://<IP-Adresse-des-T100>:7414
 
-```
-daq.lt://172.19.211.82:7414
+# .NET
+dotnet run -- daq.lt://<IP-Adresse-des-T100>:7414
 ```
 
-Das Präfix `daq.lt://` wählt gezielt das openDAQ™ LT Streaming-Protokoll,
-das einzige vom T100 unterstützte Protokoll – eine Netzwerk-Suche per mDNS
-ist dafür **nicht** erforderlich. Der Port `:7414` kann weggelassen werden,
-sofern das Gerät den Standardport verwendet.
+Diese Variante eignet sich besonders, wenn die automatische Netzwerksuche
+(siehe unten) aus Netzwerkgründen (Proxy, VPN, Firewall, segmentierte Netze)
+nicht funktioniert – IP-Adresse und Port des T100 müssen dann bekannt sein
+und werden direkt übergeben.
+
+## `streaming_discovery` – Streaming über automatische Netzwerksuche
+
+Diese App benötigt **keine Argumente**. Sie durchsucht das lokale Netzwerk
+automatisch per **mDNS** nach openDAQ™-LT-Geräten, verbindet sich mit dem
+ersten gefundenen T100 und beginnt sofort mit dem Streaming.
+
+```bash
+# Python
+python streaming_discovery.py
+
+# C++
+./streaming_discovery
+
+# .NET
+dotnet run
+```
+
+**Hinweis:** mDNS-Discovery basiert auf UDP-Multicast im lokalen Subnetz.
+Manche Unternehmensnetzwerke (z. B. mit Proxy-, VPN- oder SASE-Lösungen)
+blockieren diesen Verkehr. Wird kein Gerät gefunden, obwohl es erreichbar
+ist, nutzen Sie stattdessen `streaming_manual` mit der bekannten
+IP-Adresse des Geräts.
 
 ## Voraussetzungen
 
 - Das T100-Gerät muss im Netzwerk erreichbar sein (Ping auf die IP-Adresse
   sollte funktionieren, ggf. Firewall-Freigabe für die openDAQ™-Ports nötig).
-- Für die Discovery-Beispiele: UDP-Multicast muss im Netzwerksegment erlaubt
-  sein (funktioniert i. d. R. nicht durch Zscaler/VPN hindurch).
+- Für `streaming_discovery`: UDP-Multicast muss im Netzwerksegment erlaubt
+  sein (funktioniert je nach Netzwerk-Konfiguration ggf. nicht über
+  Proxy/VPN hinweg).
 
 ### C++
 - CMake ≥ 3.20, ein C++17-Compiler
@@ -89,51 +111,61 @@ sofern das Gerät den Standardport verwendet.
 
 ### .NET
 - .NET SDK ≥ 8.0
-- NuGet-Paket `OpenDAQ`
+- NuGet-Paket `OpenDAQ.Net` – dieses ist **nicht** über die öffentliche
+  nuget.org-Quelle verfügbar. Es muss zuerst von
+  [https://docs.opendaq.com/](https://docs.opendaq.com/) heruntergeladen und
+  anschließend manuell als NuGet-Paket installiert werden, z. B. mit:
+  ```bash
+  dotnet add package OpenDAQ.Net --source <Pfad-zum-heruntergeladenen-Paket>
+  ```
+  oder indem der Downloadordner als lokale Paketquelle in der
+  `nuget.config`/über `dotnet nuget add source` eingetragen wird.
 
-## Ausführen der Beispiele
+## Bauen und Ausführen
 
 ### C++
 ```bash
 cd cpp
 cmake -B build -S .
 cmake --build build
-./build/torque_speed_reader/torque_speed_reader
-./build/discovery/discovery
+
+./build/streaming_manual/streaming_manual daq.lt://<IP-Adresse-des-T100>:7414
+./build/streaming_discovery/streaming_discovery
 ```
 
 ### Python
 ```bash
 cd python
 pip install -r requirements.txt
-python torque_speed_reader.py
-python discovery.py
+
+python streaming_manual.py daq.lt://<IP-Adresse-des-T100>:7414
+python streaming_discovery.py
 ```
 
 ### .NET
 ```bash
-cd dotnet/TorqueSpeedReader
-dotnet run
+cd dotnet/StreamingManual
+dotnet run -- daq.lt://<IP-Adresse-des-T100>:7414
 
-cd ../Discovery
+cd ../StreamingDiscovery
 dotnet run
 ```
 
 ## Anpassung
 
-Falls sich die IP-Adresse Ihres T100 ändert oder Sie mehrere Geräte
-betreiben, passen Sie in den `torque_speed_reader`-Beispielen einfach die
-Konstante `DEVICE_IP` bzw. `DeviceIp` an. Die Namen der Signale (`torque-1`,
-`speed-1`) entsprechen den auf dem Gerät konfigurierten Kanalbezeichnungen
-und können bei Bedarf ebenfalls angepasst werden.
+Die Namen der Signale (`torque-1`, `speed-1`) entsprechen den auf dem Gerät
+konfigurierten Kanalbezeichnungen und können bei Bedarf im jeweiligen
+Quellcode angepasst werden (Suche nach `LocalId("torque-1")` bzw.
+`LocalId("speed-1")`).
 
 ## Support
 
 Bei Fragen zur Netzwerk-Konfiguration (z. B. Freischaltung der benötigten
-Ports in Zscaler) wenden Sie sich bitte an Ihre IT-Abteilung. Für das T100
-wird ausschließlich folgendes Protokoll/Port benötigt:
+Ports in Ihrer Firewall/Proxy-Lösung) wenden Sie sich bitte an Ihre
+IT-Abteilung. Für das T100 wird ausschließlich folgendes Protokoll/Port
+benötigt:
 
 - **openDAQ™ LT Streaming**: TCP-Port **7414** (unverschlüsselt, `daq.lt://`)
   bzw. **7415** für TLS (`daq.lts://`), falls das Gerät dies unterstützt.
-- **mDNS-Discovery** (nur für die Discovery-Beispiele, nicht zwingend
+- **mDNS-Discovery** (nur für `streaming_discovery`, nicht zwingend
   erforderlich): UDP-Port 5353 (Multicast)

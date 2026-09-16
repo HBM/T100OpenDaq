@@ -8,8 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- openDAQ(TM) .NET bindings, see https://www.nuget.org/packages/OpenDAQ -->
-    <PackageReference Include="OpenDAQ" Version="*" />
+    <!-- openDAQ(TM) .NET bindings, see https://docs.opendaq.com/ -->
+    <PackageReference Include="OpenDAQ.Net" Version="*" />
   </ItemGroup>
 
 </Project>

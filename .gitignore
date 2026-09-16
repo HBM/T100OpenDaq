@@ -1,0 +1,27 @@
+# IDE
+.vscode/
+.vs/
+*.user
+
+# .NET
+bin/
+obj/
+
+# C++ / CMake
+build/
+build-*/
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,11 +1,18 @@
 /**
- * T100 openDAQ(TM) example — C++
+ * T100 openDAQ(TM) example -- C++ -- Manual connection string streaming
  *
- * Connects directly to a T100 device via its IP address (bypassing mDNS/discovery,
- * e.g. when the network scan is blocked by a proxy such as Zscaler) and streams
- * the two measurement signals "torque-1" and "speed-1".
+ * Connects to a T100 device using an explicitly given openDAQ(TM) connection
+ * string (no mDNS/network discovery involved) and streams the two measurement
+ * signals "torque-1" and "speed-1".
  *
- * Adjust DEVICE_IP / DEVICE_CONNECTION_STRING to match your T100 device.
+ * The T100 only supports the openDAQ(TM) LT streaming protocol
+ * (server capability ID "OpenDAQLTStreaming"), so the connection string must
+ * use the "daq.lt://" prefix, e.g.:
+ *
+ *     ./streaming_manual daq.lt://<device-ip>:7414
+ *
+ * Usage:
+ *     streaming_manual <connection-string>
  */
 
 #include <opendaq/opendaq.h>
@@ -16,26 +23,26 @@
 using namespace daq;
 using namespace std::chrono_literals;
 
-// IP address of the T100 device (from the customer's network)
-static const std::string DEVICE_IP = "172.19.211.82";
-
-// The T100 only supports the openDAQ(TM) LT streaming protocol (server capability ID
-// "OpenDAQLTStreaming"), not the full OPC UA configuration protocol. LT devices expose
-// a flat list of Signals directly (no full component tree). The "daq.lt://" prefix
-// selects this protocol explicitly; the default LT port is 7414 and can be omitted.
-static const std::string DEVICE_CONNECTION_STRING = "daq.lt://" + DEVICE_IP + ":7414";
-
-int main()
+int main(int argc, const char* argv[])
 {
+    if (argc != 2)
+    {
+        std::cerr << "Usage: " << argv[0] << " <connection-string>" << std::endl;
+        std::cerr << "Example: " << argv[0] << " daq.lt://192.168.0.10:7414" << std::endl;
+        return 1;
+    }
+
+    const std::string connectionString = argv[1];
+
     // Create a fresh openDAQ(TM) instance
     InstancePtr instance = Instance();
 
-    std::cout << "Connecting to T100 at " << DEVICE_CONNECTION_STRING << " ..." << std::endl;
+    std::cout << "Connecting to " << connectionString << " ..." << std::endl;
 
     DevicePtr device;
     try
     {
-        device = instance.addDevice(DEVICE_CONNECTION_STRING);
+        device = instance.addDevice(connectionString);
     }
     catch (const std::exception& e)
     {
@@ -75,7 +82,7 @@ int main()
 
     std::cout << "Reading torque-1 / speed-1 ... (Ctrl+C to stop)" << std::endl;
 
-    for (int i = 0; i < 200; ++i)
+    while (true)
     {
         std::this_thread::sleep_for(100ms);
 

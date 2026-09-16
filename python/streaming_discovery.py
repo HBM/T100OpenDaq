@@ -1,14 +1,20 @@
 """
-T100 openDAQ(TM) example -- Python
+T100 openDAQ(TM) example -- Python -- Discovery streaming
 
-Connects directly to a T100 device via its IP address (bypassing mDNS/discovery,
-e.g. when the network scan is blocked by a proxy such as Zscaler) and streams
-the two measurement signals "torque-1" and "speed-1".
+Uses openDAQ(TM)'s built-in mDNS discovery to automatically find a T100
+device on the local network (server capability "OpenDAQLTStreaming"),
+connects to it and streams the two measurement signals "torque-1" and
+"speed-1".
 
-Adjust DEVICE_IP / DEVICE_CONNECTION_STRING to match your T100 device.
+NOTE: mDNS discovery relies on UDP multicast on the local subnet. Some
+network setups (proxies, VPN/SASE clients, segmented networks) block this
+traffic. If no device is found, use streaming_manual.py instead and provide
+the device's connection string directly, e.g.:
 
-Install dependencies:
-    pip install -r requirements.txt
+    python streaming_manual.py daq.lt://<device-ip>:7414
+
+Usage:
+    python streaming_discovery.py
 """
 
 import sys
@@ -16,23 +22,36 @@ import time
 
 import opendaq as daq
 
-# IP address of the T100 device (from the customer's network)
-DEVICE_IP = "172.19.211.82"
-
-# The T100 only supports the openDAQ(TM) LT streaming protocol (server capability ID
-# "OpenDAQLTStreaming"), not the full OPC UA configuration protocol. LT devices expose
-# a flat list of signals directly (no full component tree). The "daq.lt://" prefix
-# selects this protocol explicitly; the default LT port is 7414 and can be omitted.
-DEVICE_CONNECTION_STRING = f"daq.lt://{DEVICE_IP}:7414"
-
 
 def main():
-    # Create a fresh openDAQ(TM) instance
     instance = daq.Instance()
 
-    print(f"Connecting to T100 at {DEVICE_CONNECTION_STRING} ...")
+    print("Scanning the network for openDAQ(TM) LT devices (mDNS discovery)...")
+    available_devices = instance.available_devices
+
+    # Find the first device that advertises the "OpenDAQLTStreaming" capability (the T100's protocol)
+    connection_string = None
+    device_name = None
+    for info in available_devices:
+        for capability in info.server_capabilities:
+            if capability.protocol_name == "OpenDAQLTStreaming":
+                connection_string = capability.connection_string
+                device_name = info.name
+                break
+        if connection_string:
+            break
+
+    if not connection_string:
+        print("No openDAQ(TM) LT device found via discovery.", file=sys.stderr)
+        print("If discovery is blocked in your network, use streaming_manual.py instead", file=sys.stderr)
+        print("and pass the device's connection string directly, e.g.:", file=sys.stderr)
+        print("    python streaming_manual.py daq.lt://<device-ip>:7414", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Found device: {device_name} -> {connection_string}")
+
     try:
-        device = instance.add_device(DEVICE_CONNECTION_STRING)
+        device = instance.add_device(connection_string)
     except Exception as e:
         print(f"Failed to connect to device: {e}", file=sys.stderr)
         sys.exit(1)
