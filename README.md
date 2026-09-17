@@ -15,7 +15,7 @@ languages, both of which continuously read the measurement signals
 | App | Arguments | Purpose |
 |---|---|---|
 | **streaming_manual** | 1 argument: connection string | Connects directly to a T100 device using a manually specified openDAQ™ connection string — no network discovery. |
-| **streaming_discovery** | none | Automatically searches (mDNS) for a T100 device on the local network, connects to the first device found, and starts streaming. |
+| **streaming_discovery** | optional: UUID | Automatically searches (mDNS) for T100 devices on the local network (other device families are ignored), connects to the first device found or the one matching the given UUID, and starts streaming. |
 
 ```
 T100OpenDaq/
@@ -71,19 +71,28 @@ are passed directly.
 
 ## `streaming_discovery` – Streaming via automatic network discovery
 
-This app requires **no arguments**. It automatically searches the local
-network for openDAQ™ LT devices via **mDNS**, connects to the first T100
-found, and immediately starts streaming.
+This app automatically searches the local network for openDAQ™ LT devices
+via **mDNS**. Only devices of the **T100 device family** are considered
+(recognized via model/device name) — other openDAQ™ LT devices on the
+network are ignored.
+
+It accepts an **optional argument**: the UUID of the desired device. If
+given, the app picks the T100 among the scan results whose UUID matches
+(useful when several T100 devices are present on the network). Without it,
+the first T100 found is used.
 
 ```bash
 # Python
 python streaming_discovery.py
+python streaming_discovery.py <uuid>
 
 # C++
 ./streaming_discovery
+./streaming_discovery <uuid>
 
 # .NET
 dotnet run
+dotnet run -- <uuid>
 ```
 
 **Note:** mDNS discovery relies on UDP multicast on the local subnet. Some

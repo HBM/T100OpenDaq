@@ -2,9 +2,13 @@
  * T100 openDAQ(TM) example -- C++ -- Discovery streaming
  *
  * Uses openDAQ(TM)'s built-in mDNS discovery to automatically find a T100
- * device on the local network (server capability "OpenDAQLTStreaming"),
- * connects to it and streams the two measurement signals "torque-1" and
- * "speed-1".
+ * device on the local network (device family "T100", server capability
+ * "OpenDAQLTStreaming"), connects to it and streams the two measurement
+ * signals "torque-1" and "speed-1".
+ *
+ * An optional UUID argument can be passed to pick a specific T100 out of
+ * several devices found by the scan (matched against the device's system
+ * UUID). Without it, the first matching T100 is used.
  *
  * NOTE: mDNS discovery relies on UDP multicast on the local subnet. Some
  * network setups (proxies, VPN/SASE clients, segmented networks) block this
@@ -14,7 +18,7 @@
  *     ./streaming_manual daq.lt://<device-ip>/stream
  *
  * Usage:
- *     streaming_discovery
+ *     streaming_discovery [uuid]
  */
 
 #include <opendaq/opendaq.h>
@@ -24,9 +28,25 @@
 #include <chrono>
 #include <thread>
 #include <optional>
+#include <vector>
+#include <algorithm>
+#include <cctype>
 
 using namespace daq;
 using namespace std::chrono_literals;
+
+static std::string toLower(std::string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+    return s;
+}
+
+static bool isT100Device(const DeviceInfoPtr& info)
+{
+    const std::string model = toLower(info.getModel().toStdString());
+    const std::string name = toLower(info.getName().toStdString());
+    return model.find("t100") != std::string::npos || name.find("t100") != std::string::npos;
+}
 
 // std::chrono::system_clock::time_point has no operator<< in C++17
 static std::string formatTimestamp(const std::chrono::system_clock::time_point& timePoint)
@@ -40,8 +60,12 @@ static std::string formatTimestamp(const std::chrono::system_clock::time_point& 
     return oss.str();
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    std::optional<std::string> uuidFilter;
+    if (argc > 1)
+        uuidFilter = std::string(argv[1]);
+
     // Create a fresh openDAQ(TM) instance
     // OPENDAQ_MODULES_DIR is defined by CMake to point at the SDK's modules folder,
     // since executables don't have modules alongside them like the Python package does
@@ -51,34 +75,57 @@ int main()
 
     ListPtr<IDeviceInfo> availableDevices = instance.getAvailableDevices();
 
-    // Find the first device that advertises the "OpenDAQLTStreaming" capability (the T100's protocol)
-    StringPtr connectionString;
-    StringPtr deviceName;
+    // Only consider devices of the T100 family that advertise the "OpenDAQLTStreaming" capability
+    std::vector<std::pair<DeviceInfoPtr, StringPtr>> candidates;
     for (const auto& info : availableDevices)
     {
+        if (!isT100Device(info))
+            continue;
         for (const auto& capability : info.getServerCapabilities())
         {
             if (capability.getProtocolName() == "OpenDAQLTStreaming")
             {
-                connectionString = capability.getConnectionString();
-                deviceName = info.getName();
+                candidates.emplace_back(info, capability.getConnectionString());
                 break;
             }
         }
-        if (connectionString.assigned())
-            break;
     }
 
-    if (!connectionString.assigned())
+    if (candidates.empty())
     {
-        std::cerr << "No openDAQ(TM) LT device found via discovery.\n"
+        std::cerr << "No T100 openDAQ(TM) LT device found via discovery.\n"
                   << "If discovery is blocked in your network, use 'streaming_manual' instead\n"
                   << "and pass the device's connection string directly, e.g.:\n"
                   << "    ./streaming_manual daq.lt://<device-ip>/stream" << std::endl;
         return 1;
     }
 
-    std::cout << "Found device: " << deviceName << " -> " << connectionString << std::endl;
+    DeviceInfoPtr selected;
+    StringPtr connectionString;
+    if (uuidFilter)
+    {
+        auto it = std::find_if(candidates.begin(), candidates.end(), [&](const auto& candidate) {
+            return toLower(candidate.first.getSystemUuid().toStdString()) == toLower(*uuidFilter);
+        });
+        if (it == candidates.end())
+        {
+            std::cerr << "No T100 device with UUID '" << *uuidFilter << "' found in scan results.\nUUIDs found: ";
+            for (size_t i = 0; i < candidates.size(); ++i)
+                std::cerr << (i > 0 ? ", " : "") << candidates[i].first.getSystemUuid();
+            std::cerr << std::endl;
+            return 1;
+        }
+        selected = it->first;
+        connectionString = it->second;
+    }
+    else
+    {
+        selected = candidates.front().first;
+        connectionString = candidates.front().second;
+    }
+
+    std::cout << "Found device: " << selected.getName() << " (uuid=" << selected.getSystemUuid() << ") -> "
+               << connectionString << std::endl;
 
     DevicePtr device;
     try
