@@ -51,17 +51,17 @@ This app connects **directly to the device without network discovery**.
 It is invoked with exactly **one argument**: the T100's openDAQ™ connection
 string.
 
-Format: `daq.lt://<IP-address>:<port>`
+Format: `daq.lt://<IP-address>:<port>/stream`
 
 ```bash
 # Python
-python streaming_manual.py daq.lt://<T100-IP-address>:80
+python streaming_manual.py daq.lt://<T100-IP-address>:80/stream
 
 # C++
-./streaming_manual daq.lt://<T100-IP-address>:80
+./streaming_manual daq.lt://<T100-IP-address>:80/stream
 
 # .NET
-dotnet run -- daq.lt://<T100-IP-address>:80
+dotnet run -- daq.lt://<T100-IP-address>:80/stream
 ```
 
 This variant is especially useful when automatic network discovery (see
@@ -128,7 +128,7 @@ cd cpp
 cmake -B build -S .
 cmake --build build
 
-./build/streaming_manual/streaming_manual daq.lt://<T100-IP-address>:80
+./build/streaming_manual/streaming_manual daq.lt://<T100-IP-address>:80/stream
 ./build/streaming_discovery/streaming_discovery
 ```
 
@@ -137,14 +137,14 @@ cmake --build build
 cd python
 pip install -r requirements.txt
 
-python streaming_manual.py daq.lt://<T100-IP-address>:80
+python streaming_manual.py daq.lt://<T100-IP-address>:80/stream
 python streaming_discovery.py
 ```
 
 ### .NET
 ```bash
 cd dotnet/StreamingManual
-dotnet run -- daq.lt://<T100-IP-address>:80
+dotnet run -- daq.lt://<T100-IP-address>:80/stream
 
 cd ../StreamingDiscovery
 dotnet run
