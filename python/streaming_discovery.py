@@ -2,9 +2,13 @@
 T100 openDAQ(TM) example -- Python -- Discovery streaming
 
 Uses openDAQ(TM)'s built-in mDNS discovery to automatically find a T100
-device on the local network (server capability "OpenDAQLTStreaming"),
-connects to it and streams the two measurement signals "torque-1" and
-"speed-1".
+device on the local network (device family "T100", server capability
+"OpenDAQLTStreaming"), connects to it and streams the two measurement
+signals "torque-1" and "speed-1".
+
+An optional UUID argument can be passed to pick a specific T100 out of
+several devices found by the scan (matched against the device's
+system UUID). Without it, the first matching T100 is used.
 
 NOTE: mDNS discovery relies on UDP multicast on the local subnet. Some
 network setups (proxies, VPN/SASE clients, segmented networks) block this
@@ -14,7 +18,7 @@ the device's connection string directly, e.g.:
     python streaming_manual.py daq.lt://<device-ip>/stream
 
 Usage:
-    python streaming_discovery.py
+    python streaming_discovery.py [uuid]
 """
 
 import sys
@@ -22,33 +26,51 @@ import time
 
 import opendaq as daq
 
+T100_FAMILY = "t100"
+
+
+def is_t100_device(info) -> bool:
+    return T100_FAMILY in info.model.lower() or T100_FAMILY in info.name.lower()
+
 
 def main():
+    uuid_filter = sys.argv[1] if len(sys.argv) > 1 else None
+
     instance = daq.Instance()
 
     print("Scanning the network for openDAQ(TM) LT devices (mDNS discovery)...")
     available_devices = instance.available_devices
 
-    # Find the first device that advertises the "OpenDAQLTStreaming" capability (the T100's protocol)
-    connection_string = None
-    device_name = None
+    # Only consider devices of the T100 family that advertise the "OpenDAQLTStreaming" capability
+    candidates = []
     for info in available_devices:
+        if not is_t100_device(info):
+            continue
         for capability in info.server_capabilities:
             if capability.protocol_name == "OpenDAQLTStreaming":
-                connection_string = capability.connection_string
-                device_name = info.name
+                candidates.append((info, capability.connection_string))
                 break
-        if connection_string:
-            break
 
-    if not connection_string:
-        print("No openDAQ(TM) LT device found via discovery.", file=sys.stderr)
+    if not candidates:
+        print("No T100 openDAQ(TM) LT device found via discovery.", file=sys.stderr)
         print("If discovery is blocked in your network, use streaming_manual.py instead", file=sys.stderr)
         print("and pass the device's connection string directly, e.g.:", file=sys.stderr)
         print("    python streaming_manual.py daq.lt://<device-ip>/stream", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Found device: {device_name} -> {connection_string}")
+    if uuid_filter:
+        matching = [c for c in candidates if c[0].system_uuid.lower() == uuid_filter.lower()]
+        if not matching:
+            found_uuids = ", ".join(info.system_uuid for info, _ in candidates) or "(none reported a UUID)"
+            print(f"No T100 device with UUID '{uuid_filter}' found in scan results.", file=sys.stderr)
+            print(f"UUIDs found: {found_uuids}", file=sys.stderr)
+            sys.exit(1)
+        info, connection_string = matching[0]
+    else:
+        info, connection_string = candidates[0]
+
+    device_name = info.name
+    print(f"Found device: {device_name} (uuid={info.system_uuid}) -> {connection_string}")
 
     try:
         device = instance.add_device(connection_string)

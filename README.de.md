@@ -15,7 +15,7 @@ fortlaufend auslesen:
 | App | Argumente | Zweck |
 |---|---|---|
 | **streaming_manual** | 1 Argument: Verbindungsstring | Verbindet sich direkt mit einem T100-Gerät über einen manuell angegebenen openDAQ™-Verbindungsstring – ohne Netzwerksuche. |
-| **streaming_discovery** | keine | Sucht automatisch (mDNS) nach einem T100-Gerät im lokalen Netzwerk, verbindet sich mit dem ersten gefundenen Gerät und startet das Streaming. |
+| **streaming_discovery** | optional: UUID | Sucht automatisch (mDNS) nach T100-Geräten im lokalen Netzwerk (andere Gerätefamilien werden ignoriert), verbindet sich mit dem ersten gefundenen bzw. dem per UUID angegebenen Gerät und startet das Streaming. |
 
 ```
 T100OpenDaq/
@@ -72,19 +72,28 @@ und werden direkt übergeben.
 
 ## `streaming_discovery` – Streaming über automatische Netzwerksuche
 
-Diese App benötigt **keine Argumente**. Sie durchsucht das lokale Netzwerk
-automatisch per **mDNS** nach openDAQ™-LT-Geräten, verbindet sich mit dem
-ersten gefundenen T100 und beginnt sofort mit dem Streaming.
+Diese App durchsucht das lokale Netzwerk automatisch per **mDNS** nach
+openDAQ™-LT-Geräten. Dabei werden **ausschließlich Geräte der Gerätefamilie
+T100** berücksichtigt (erkannt anhand von Modell-/Gerätename) – andere
+openDAQ™-LT-Geräte im Netzwerk werden ignoriert.
+
+Sie akzeptiert ein **optionales Argument**: die UUID des gewünschten Geräts.
+Wird sie angegeben, wählt die App aus den gefundenen T100-Geräten dasjenige
+aus, dessen UUID übereinstimmt (nützlich, wenn mehrere T100 im Netzwerk
+vorhanden sind). Ohne Argument wird das erste gefundene T100 verwendet.
 
 ```bash
 # Python
 python streaming_discovery.py
+python streaming_discovery.py <uuid>
 
 # C++
 ./streaming_discovery
+./streaming_discovery <uuid>
 
 # .NET
 dotnet run
+dotnet run -- <uuid>
 ```
 
 **Hinweis:** mDNS-Discovery basiert auf UDP-Multicast im lokalen Subnetz.

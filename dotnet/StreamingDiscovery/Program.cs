@@ -1,9 +1,13 @@
 // T100 openDAQ(TM) example -- .NET / C# -- Discovery streaming
 //
 // Uses openDAQ(TM)'s built-in mDNS discovery to automatically find a T100
-// device on the local network (server capability "OpenDAQLTStreaming"),
-// connects to it and streams the two measurement signals "torque-1" and
-// "speed-1".
+// device on the local network (device family "T100", server capability
+// "OpenDAQLTStreaming"), connects to it and streams the two measurement
+// signals "torque-1" and "speed-1".
+//
+// An optional UUID argument can be passed to pick a specific T100 out of
+// several devices found by the scan (matched against the device's system
+// UUID). Without it, the first matching T100 is used.
 //
 // NOTE: mDNS discovery relies on UDP multicast on the local subnet. Some
 // network setups (proxies, VPN/SASE clients, segmented networks) block this
@@ -13,11 +17,17 @@
 //     dotnet run -- daq.lt://<device-ip>/stream   (in the StreamingManual project)
 //
 // Usage:
-//     dotnet run
+//     dotnet run [-- <uuid>]
 
 using Daq.Core.Types;
 using Daq.Core.OpenDAQ;
 using System.Linq;
+
+static bool IsT100Device(DeviceInfo info) =>
+    info.Model.Contains("t100", StringComparison.OrdinalIgnoreCase) ||
+    info.Name.Contains("t100", StringComparison.OrdinalIgnoreCase);
+
+string? uuidFilter = args.Length > 0 ? args[0] : null;
 
 Instance instance = OpenDAQFactory.Instance();
 
@@ -25,34 +35,51 @@ Console.WriteLine("Scanning the network for openDAQ(TM) LT devices (mDNS discove
 
 var availableDevices = instance.AvailableDevices;
 
-// Find the first device that advertises the "OpenDAQLTStreaming" capability (the T100's protocol)
-string? connectionString = null;
-string? deviceName = null;
+// Only consider devices of the T100 family that advertise the "OpenDAQLTStreaming" capability
+var candidates = new List<(DeviceInfo Info, string ConnectionString)>();
 foreach (var info in availableDevices)
 {
+    if (!IsT100Device(info))
+        continue;
     foreach (var capability in info.ServerCapabilities)
     {
         if (capability.ProtocolName == "OpenDAQLTStreaming")
         {
-            connectionString = capability.ConnectionString;
-            deviceName = info.Name;
+            candidates.Add((info, capability.ConnectionString));
             break;
         }
     }
-    if (connectionString != null)
-        break;
 }
 
-if (connectionString == null)
+if (candidates.Count == 0)
 {
-    Console.Error.WriteLine("No openDAQ(TM) LT device found via discovery.");
+    Console.Error.WriteLine("No T100 openDAQ(TM) LT device found via discovery.");
     Console.Error.WriteLine("If discovery is blocked in your network, use StreamingManual instead");
     Console.Error.WriteLine("and pass the device's connection string directly, e.g.:");
     Console.Error.WriteLine("    dotnet run -- daq.lt://<device-ip>/stream");
     return 1;
 }
 
-Console.WriteLine($"Found device: {deviceName} -> {connectionString}");
+(DeviceInfo Info, string ConnectionString) selected;
+if (uuidFilter is not null)
+{
+    var matching = candidates.Where(c => string.Equals(c.Info.SystemUuid, uuidFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+    if (matching.Count == 0)
+    {
+        var foundUuids = string.Join(", ", candidates.Select(c => c.Info.SystemUuid));
+        Console.Error.WriteLine($"No T100 device with UUID '{uuidFilter}' found in scan results.");
+        Console.Error.WriteLine($"UUIDs found: {(foundUuids.Length > 0 ? foundUuids : "(none reported a UUID)")}");
+        return 1;
+    }
+    selected = matching[0];
+}
+else
+{
+    selected = candidates[0];
+}
+
+var (deviceInfo, connectionString) = selected;
+Console.WriteLine($"Found device: {deviceInfo.Name} (uuid={deviceInfo.SystemUuid}) -> {connectionString}");
 
 Device? device;
 try
